@@ -1,0 +1,10 @@
+.gdb_history
+*.rep
+*.gpr
+*.lock
+*.lock~
+*.zip
+*.rar
+*.tar.*
+*.extracted
+*.bin
