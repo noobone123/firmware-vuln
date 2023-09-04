@@ -80,26 +80,38 @@ def resolve_addr2sym(ql: Qiling, addr: int):
     ql.log.warning(f"Can not find symbol for address: {hex(addr)}")
     return "?"
     
-def update_trace_report(inst: CsInsn, callee_name: str):
-    global trace_report
+def trace_report(inst: CsInsn, callee_name: str):
+    global last_report
+    global current_report
     
-    if len(trace_report) == 0:
-        trace_report.append({
-            "callee": callee_name,
-            "count": 1,
-            "log": f"{hex(inst.address)}: {inst.mnemonic} -> {callee_name}"
-        })
+    trival_functions = [
+        "_dl_runtime_resolve"
+    ]
+    
+    if callee_name in trival_functions:
+        return
+
+    if last_report == {}:
+        last_report["callee"] = callee_name
+        last_report["count"] = 1
+        last_report["log"] = f"{hex(inst.address)}: {inst.mnemonic} -> {callee_name}"
+        print(last_report["log"])
+        print("\tcount: %d" % (last_report["count"]))
         return
     
-    last_report = trace_report[-1]
     if last_report["callee"] == callee_name:
         last_report["count"] += 1
     else:
-        trace_report.append({
-            "callee": callee_name,
-            "count": 1,
-            "log": f"{hex(inst.address)}: {inst.mnemonic} -> {callee_name}"
-        })
+        current_report["callee"] = callee_name
+        current_report["count"] = 1
+        current_report["log"] = f"{hex(inst.address)}: {inst.mnemonic} -> {callee_name}"
+
+        print(current_report["log"])
+        print("\tcount: %d" % (current_report["count"]))
+
+        last_report = current_report
+
+    return
 
 def trace_callback(ql: Qiling, trace_externl_func = False):
 
@@ -134,7 +146,7 @@ def trace_callback(ql: Qiling, trace_externl_func = False):
             call_target_reg_name = inst.reg_name(call_target_op.reg)
             assert call_target_reg_name == "t9"
             call_target = ql.arch.regs.read(call_target_reg_name)
-            update_trace_report(inst, resolve_addr2sym(ql, call_target))
+            trace_report(inst, resolve_addr2sym(ql, call_target))
 
     ql.hook_code(__trace_hook)
 
@@ -152,9 +164,10 @@ def main_hook(ql: Qiling):
     # get the lib path and lib base address
     global lib_maps
     lib_set = set()
+
     for mapinfo in formated_map_info:
         # ld is excluded by following condition
-        if "lib" in mapinfo["label"] and "[mmap]" in mapinfo["label"]:
+        if ("lib" in mapinfo["label"] and "[mmap]" in mapinfo["label"]) or ("ld-uClibc" in mapinfo["label"]):
             lib_name = mapinfo["label"].replace("[mmap]", "").strip()
             lib_path = rootfs + "/lib" + "/" + lib_name
             lib_set.add((lib_path, ql.mem.get_lib_base(lib_name)))
@@ -209,13 +222,11 @@ if __name__ == "__main__":
 
     exeu_addrsym_map = {}
     lib_maps = []
-    trace_report = []
+
+    last_report = {}
+    current_report = {}
 
     try:
         my_sandbox([binary_path], rootfs)
     except Exception as e:
         print(e)
-
-    for report in trace_report:
-        print(f"{report['log']}")
-        print(f"    -> {report['count']} times")
