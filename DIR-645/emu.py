@@ -82,7 +82,6 @@ def resolve_addr2sym(ql: Qiling, addr: int):
     
 def trace_report(inst: CsInsn, callee_name: str):
     global last_report
-    global current_report
     
     trival_functions = [
         "_dl_runtime_resolve"
@@ -102,14 +101,12 @@ def trace_report(inst: CsInsn, callee_name: str):
     if last_report["callee"] == callee_name:
         last_report["count"] += 1
     else:
-        current_report["callee"] = callee_name
-        current_report["count"] = 1
-        current_report["log"] = f"{hex(inst.address)}: {inst.mnemonic} -> {callee_name}"
+        print(last_report["log"])
+        print("\tcount: %d" % (last_report["count"]))
 
-        print(current_report["log"])
-        print("\tcount: %d" % (current_report["count"]))
-
-        last_report = current_report
+        last_report["callee"] = callee_name
+        last_report["count"] = 1
+        last_report["log"] = f"{hex(inst.address)}: {inst.mnemonic} -> {callee_name}"
 
     return
 
@@ -136,7 +133,7 @@ def trace_callback(ql: Qiling, trace_externl_func = False):
         # find the `jalr $t9`, which is the function call in mips
         if mnemonic == "jalr":
             
-            # if the call target is external function, we should not trace it
+            # if current inst's address is in external lib, just return
             if not trace_externl_func:
                 if if_external_addr(ql, address):
                     return
@@ -147,6 +144,9 @@ def trace_callback(ql: Qiling, trace_externl_func = False):
             assert call_target_reg_name == "t9"
             call_target = ql.arch.regs.read(call_target_reg_name)
             trace_report(inst, resolve_addr2sym(ql, call_target))
+        
+        elif mnemonic == "jal":
+            trace_report(inst, inst.op_str)
 
     ql.hook_code(__trace_hook)
 
@@ -224,9 +224,12 @@ if __name__ == "__main__":
     lib_maps = []
 
     last_report = {}
-    current_report = {}
 
     try:
         my_sandbox([binary_path], rootfs)
     except Exception as e:
         print(e)
+
+    #! Print the last report
+    print(last_report["log"])
+    print("\tcount: %d" % (last_report["count"]))
